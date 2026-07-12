@@ -1,18 +1,3 @@
-# Native binary (platform-specific — build with: make native)
-RunCPM
-
-# Runtime files
-.cpm.sock
-.cpm.pid
-
-# Python cache
 __pycache__/
 *.pyc
-
-# B: drive work files (generated during sessions)
-B/0/*
-!B/0/.gitkeep
-
-# Microsoft CP/M software (copyrighted — download with: bash download_software.sh)
-A/0/*.COM
-A/0/*.REL
+.DS_Store
