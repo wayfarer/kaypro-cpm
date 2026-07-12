@@ -1,133 +1,39 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code working in this repository. See README.md for what the project is, how to run it, and the CP/M workflows.
 
-# CP/M
+## Rules
 
-A collection of emulated CP/M machines, one per directory. Each machine directory is self-contained: its own drives, Dockerfile, Makefile, and Python harness.
+- **Python orchestration scripts must use the standard library only.** No external packages, no pip installs. `pty`, `os`, `select`, `socket` and `subprocess` cover everything needed here.
+- **The machine is a Kaypro 2 (1984), not a Kaypro II (1982).** They are different machines with different software bundles. Don't "fix" `kaypro-2-84` to `kaypro-ii`. README.md explains why.
 
-```
-kaypro-2-84/   ← Kaypro 2 (1984). CP/M 2.2, Z80, two floppies.
-```
-
-**Rule:** Python orchestration scripts must use the standard library only. No external packages.
-
-The root `Makefile` forwards every target to a machine directory, defaulting to `kaypro-2-84`:
-
-```bash
-make                      # same as: make -C kaypro-2-84 run
-make MACHINE=some-other-machine run
-```
-
-All commands below can equally be run from inside the machine directory.
-
----
-
-## Machines
-
-### `kaypro-2-84` — Kaypro 2 (1984)
-
-Z80, 64K, CP/M 2.2, two single-sided 191K floppies. Pre-loaded with Microsoft BASIC-80 v5 and FORTRAN-80 v3.44 — modelled after a real machine owned by a mathematics professor.
-
-Note the model naming, which is easy to get wrong: the **Kaypro II** (Roman numeral, 1982) shipped S-BASIC and the Perfect Software suite. The **Kaypro 2** (Arabic, 1984) is a different machine, and is the one that shipped MBASIC and WordStar 3.3 — which is why this directory is `kaypro-2-84`. The same Roman/Arabic split distinguishes the Kaypro IV '83 from the Kaypro 4 '84.
-
-The emulator underneath is [RunCPM](https://github.com/MockbaTheBorg/RunCPM), a generic Z80 CP/M 2.2 machine. There is no Kaypro-specific BIOS, terminal emulation, or disk geometry — the Kaypro identity is in the software bundle and the drive layout, not the hardware.
-
----
-
-## Two modes of operation
-
-### First-time setup
-
-```bash
-bash kaypro-2-84/download_software.sh   # fetch MBASIC and FORTRAN-80 into kaypro-2-84/A/0/
-```
-
-### 1. Interactive (Docker)
-
-```bash
-make              # builds image and drops into CP/M (default target)
-make run-persist  # same, with B: drive mounted from host
-```
-
-### 2. Harness / programmatic (native binary, macOS only)
-
-```bash
-make native   # builds kaypro-2-84/RunCPM via build_runcpm.sh (one-time)
-```
-
-Then drive it via the CLI, from inside the machine directory:
-
-```bash
-cd kaypro-2-84
-python cpm.py start           # start background CP/M session
-python cpm.py status          # check if running
-python cpm.py run "DIR"       # send a command, print output
-python cpm.py write FIBO.FOR  # write stdin to B: drive
-python cpm.py stop            # stop the session
-```
-
----
-
-## Architecture (harness mode)
+## Architecture
 
 ```
-cpm.py  ──(Unix socket)──  cpm_daemon.py  ──(pty)──  RunCPM binary
-  CLI                         background                  CP/M 2.2
-                              process
+cpm.py  ──(Unix socket)──  harness.daemon  ──(pty)──  RunCPM binary
+  CLI                        background                 CP/M 2.2
+                             process
 ```
 
-`cpm.py` is stateless — each invocation opens a socket connection to the daemon and sends a newline-terminated JSON message `{"action": "run"|"write", ...}`. The daemon holds the single long-lived `CPMSession` (in `cpm_session.py`) which drives RunCPM via a PTY using `pty`, `os`, and `select`.
+`harness/` is machine-agnostic: nothing in it knows about a Kaypro. A machine is a directory under `machines/` holding drives (`A/0`, `B/0`) and its software. Adding a machine should never require touching `harness/`.
 
-All three scripts resolve their paths from `__file__`, so the machine directory is the root for everything: the socket is `kaypro-2-84/.cpm.sock`, the daemon PID `kaypro-2-84/.cpm.pid`, and the drives `kaypro-2-84/A/`, `kaypro-2-84/B/`. Each machine directory therefore gets its own independent session.
+`cpm.py` is stateless — each invocation opens a socket and sends one newline-terminated JSON message (`{"action": "run"|"write", ...}`). The daemon holds the single long-lived `CPMSession`. The socket and PID file live in the machine's own directory, so machines don't collide.
 
-`cpm_session.py` reads from the PTY until a CP/M prompt (`A0>`, `B0>`, etc.) or MBASIC's `Ok` prompt appears, then returns the output with the echo and prompt stripped.
+RunCPM resolves `A:`, `B:` … against its working directory, which is why `CPMSession` runs it with `cwd=machine_dir`.
 
----
+## Talking to the emulator — hard-won details
 
-## Drive layout
+These are easy to get wrong and were the source of a real bug (see commit 8834838):
 
-Relative to the machine directory:
+- **Terminate commands with a bare `\r`, never `\r\n`.** The CR executes the command; a trailing LF is read as a *second, empty* command line, and the CCP answers it with an extra prompt. That prompt then lands at the head of the next command's output.
+- **A prompt is only a prompt at the end of a quiet stream.** Prompt-shaped text can occur inside a program's own output — `PRINT "Ok computer"` in MBASIC is enough to fool a naive match. `CPMSession` requires a prompt at the end of the buffer *and* ~80ms of silence, since the CCP prints its prompt immediately before blocking on input.
+- **CP/M user numbers run 0–15, not 0–9**, and SUBMIT ends the prompt with `$` rather than `>`.
+- **RunCPM reprints its version banner on every warm boot**, i.e. after each `.COM` exits. It's emulator chrome, not CP/M output, and `CPMSession` filters it.
+- Lines arrive as `\r\r\n` — RunCPM emits `\r\n` and the pty adds another CR.
 
-```
-A/0/         ← system disk (read-only in practice)
-  MBASIC.COM   Microsoft BASIC-80 v5
-  F80.COM      Microsoft FORTRAN-80 v3.44 compiler
-  L80.COM      Microsoft Link-80 v3.44 linker
-  FORLIB.REL   FORTRAN-80 runtime library
-  LIB.COM      Library manager
-  HELLO.BAS    Sample BASIC program
+If you change output handling, run `make test`. The smoke test asserts on exact program output precisely because this layer's failure mode is plausible-looking-but-wrong text.
 
-B/0/         ← work disk (source files, compiled output)
-```
+## Gotchas
 
-`A/` and `B/` on the host map directly to CP/M drives inside both the Docker container and the native session. Files written to `B/0/` on the host appear immediately on B: in a running native session.
-
----
-
-## FORTRAN-80 workflow
-
-```
-A0> F80 =B:PROG                           compile B:PROG.FOR → B:PROG.REL
-A0> L80 B:PROG,A:FORLIB/S,B:PROG/N/E     link → B:PROG.COM
-A0> B:PROG                                run
-```
-
-FORTRAN source must be ALL CAPS, fixed-format (code starts column 7, labels columns 1–5).
-
-FORTRAN-80 was never part of any Kaypro bundle — a professor would have bought it separately. It is here because the real machine had it, not because the model shipped with it.
-
-## BASIC workflow
-
-```
-A0> MBASIC                 enter interpreter (Ok prompt)
-Ok  LOAD "B:PROG.BAS"
-Ok  RUN
-Ok  SYSTEM                 return to CP/M
-```
-
----
-
-## Future scope
-
-- **WordStar 3.3** — part of the genuine Kaypro 2/84 bundle (with MailMerge), so it belongs in `kaypro-2-84/A/0/` as `WS.COM`. Harder to source than the Microsoft tools.
+- FORTRAN source must be ALL CAPS, fixed-format (code from column 7, labels in 1–5). Hollerith constants count characters — `13HSMOKE TEST OK` must match the string length exactly, or you get a confusing syntax error.
+- `A/0/*.COM` and `A/0/*.REL` are gitignored (copyrighted Microsoft binaries). If a machine's A: drive looks empty, run its `download_software.sh`.
