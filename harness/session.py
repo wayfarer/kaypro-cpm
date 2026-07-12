@@ -5,8 +5,7 @@ import select
 import subprocess
 import time
 
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-RUNCPM = os.path.join(PROJECT_ROOT, "RunCPM")
+from . import RUNCPM
 
 # The CCP builds its prompt as "\r\n<drive><user><term>" and then blocks for
 # input. User numbers run 0-15, and the terminator is '$' while a SUBMIT file
@@ -25,14 +24,18 @@ class SessionClosed(RuntimeError):
 
 
 class CPMSession:
-    def __init__(self):
+    """A live RunCPM process. `machine_dir` holds the drives and becomes its cwd,
+    which is what RunCPM resolves A:, B:, ... against."""
+
+    def __init__(self, machine_dir: str):
+        self.machine_dir = machine_dir
         master_fd, slave_fd = pty.openpty()
         self._proc = subprocess.Popen(
             [RUNCPM],
             stdin=slave_fd,
             stdout=slave_fd,
             stderr=slave_fd,
-            cwd=PROJECT_ROOT,
+            cwd=machine_dir,
             close_fds=True,
         )
         os.close(slave_fd)
@@ -95,6 +98,11 @@ class CPMSession:
 
     def close(self):
         self._proc.terminate()
+        try:
+            self._proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self._proc.kill()
+            self._proc.wait(timeout=5)
         try:
             os.close(self._fd)
         except OSError:

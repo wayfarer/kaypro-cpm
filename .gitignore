@@ -1,3 +1,19 @@
+# Native binary, shared by every machine (build with: make native)
+RunCPM
+
+# Runtime files, one set per machine
+.cpm.sock
+.cpm.pid
+
+# Python cache
 __pycache__/
 *.pyc
 .DS_Store
+
+# B: drive work files (generated during sessions)
+machines/*/B/0/*
+!machines/*/B/0/.gitkeep
+
+# Microsoft CP/M software (copyrighted — download with: bash download_software.sh)
+machines/*/A/0/*.COM
+machines/*/A/0/*.REL
