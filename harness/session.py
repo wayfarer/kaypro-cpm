@@ -77,12 +77,12 @@ class CPMSession:
                 out, self._buf = self._buf, ""
                 return out
 
-    def run(self, command: str) -> str:
+    def run(self, command: str, timeout: float = 120.0) -> str:
         # Terminate with a bare CR. A trailing LF is taken as a second, empty
         # command line, which the CCP answers with an extra prompt; that prompt
         # then lands at the head of the next command's output.
         os.write(self._fd, (command + "\r").encode())
-        return self._clean(self._read_until_prompt(), command)
+        return self._clean(self._read_until_prompt(timeout=timeout), command)
 
     @staticmethod
     def _clean(raw: str, command: str) -> str:
