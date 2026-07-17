@@ -4,7 +4,8 @@
 Commands:
   cpm.py start              Start a background CP/M session
   cpm.py run <command>      Send a command and print output
-  cpm.py write <filename>   Write stdin to a file on B: drive
+  cpm.py write <filename> [user]   Write stdin to a file on B: drive
+                            (user area 0 unless one is given)
   cpm.py stop               Stop the background session
   cpm.py status             Show whether a session is running
   cpm.py machines           List available machines
@@ -79,7 +80,9 @@ def main():
     sub.add_parser("status")
     sub.add_parser("machines")
     sub.add_parser("run").add_argument("cpm_command", help="command to send to CP/M")
-    sub.add_parser("write").add_argument("filename", help="file to create on B: (content on stdin)")
+    write = sub.add_parser("write")
+    write.add_argument("filename", help="file to create on B: (content on stdin)")
+    write.add_argument("user", nargs="?", type=int, default=0, help="user area 0-15 (default 0)")
 
     args = parser.parse_args()
 
@@ -101,7 +104,12 @@ def main():
     elif args.command == "write":
         print(_send(
             sock_path(machine_dir),
-            {"action": "write", "filename": args.filename, "content": sys.stdin.read()},
+            {
+                "action": "write",
+                "filename": args.filename,
+                "user": args.user,
+                "content": sys.stdin.read(),
+            },
         ))
 
 

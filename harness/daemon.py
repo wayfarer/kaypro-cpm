@@ -21,10 +21,14 @@ def handle(msg: dict, session: CPMSession, machine_dir: str) -> str:
 
     if action == "write":
         name = os.path.basename(msg["filename"])
-        path = os.path.join(machine_dir, "B", "0", name)
-        with open(path, "w", newline="\r\n") as f:
+        user = int(msg.get("user", 0))
+        if not 0 <= user <= 15:
+            return f"Invalid user area: {user}"
+        area = os.path.join(machine_dir, "B", str(user))
+        os.makedirs(area, exist_ok=True)
+        with open(os.path.join(area, name), "w", newline="\r\n") as f:
             f.write(msg["content"])
-        return f"Written {name} to B:"
+        return f"Written {name} to B: user {user}"
 
     return f"Unknown action: {action!r}"
 
