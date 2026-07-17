@@ -25,25 +25,68 @@ import time
 from harness import REPO_ROOT, machine_names, pid_path, resolve_machine, sock_path
 
 
+# The daemon bounds each command at RUN_TIMEOUT seconds and always replies, so
+# a silent socket past this margin means the daemon itself is gone.
+REPLY_TIMEOUT = 330
+
+
 def _send(sock: str, msg: dict) -> str:
     client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client.settimeout(REPLY_TIMEOUT)
     try:
         client.connect(sock)
     except (FileNotFoundError, ConnectionRefusedError):
+        client.close()
         raise SystemExit("No session running. Start one with: cpm.py start")
-    client.send((json.dumps(msg) + "\n").encode())
-    data = b""
-    while not data.endswith(b"\n"):
-        data += client.recv(4096)
-    client.close()
+    try:
+        client.send((json.dumps(msg) + "\n").encode())
+        data = b""
+        while not data.endswith(b"\n"):
+            chunk = client.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+    except (socket.timeout, OSError):
+        raise SystemExit(
+            "Error: CP/M session is not responding; run `cpm.py stop` then "
+            "`cpm.py start`."
+        )
+    finally:
+        client.close()
+    if not data.endswith(b"\n"):
+        # An empty read means the daemon died mid-request; without this check
+        # the recv loop above would spin forever on b"".
+        raise SystemExit(
+            "Error: CP/M session ended before replying; run `cpm.py stop` "
+            "then `cpm.py start`."
+        )
     return json.loads(data.decode())["output"]
+
+
+def _daemon_alive(sock: str) -> bool:
+    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    probe.settimeout(2)
+    try:
+        probe.connect(sock)
+        return True
+    except OSError:
+        return False
+    finally:
+        probe.close()
 
 
 def cmd_start(name: str, machine_dir: str):
     sock = sock_path(machine_dir)
     if os.path.exists(sock):
-        print(f"Session already running for {name}.")
-        return
+        if _daemon_alive(sock):
+            print(f"Session already running for {name}.")
+            return
+        # Stale files from a dead daemon; clear them and start fresh.
+        for path in (sock, pid_path(machine_dir)):
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
     subprocess.Popen(
         [sys.executable, "-m", "harness.daemon", "--machine", name],
         cwd=REPO_ROOT,
@@ -64,7 +107,18 @@ def cmd_stop(name: str, machine_dir: str):
         print(f"No session running for {name}.")
         return
     with open(pid) as f:
-        os.kill(int(f.read().strip()), signal.SIGTERM)
+        pid_num = int(f.read().strip())
+    try:
+        os.kill(pid_num, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    # The daemon cleans these up on SIGTERM, but a dead daemon can't; unlink
+    # so the next start doesn't see stale files.
+    for path in (sock_path(machine_dir), pid):
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
     print(f"CP/M session stopped ({name}).")
 
 
@@ -97,7 +151,8 @@ def main():
     elif args.command == "stop":
         cmd_stop(name, machine_dir)
     elif args.command == "status":
-        running = os.path.exists(sock_path(machine_dir))
+        sock = sock_path(machine_dir)
+        running = os.path.exists(sock) and _daemon_alive(sock)
         print(f"{name}: {'running' if running else 'not running'}")
     elif args.command == "run":
         print(_send(sock_path(machine_dir), {"action": "run", "command": args.cpm_command}))
