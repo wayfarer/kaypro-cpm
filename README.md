@@ -2,7 +2,7 @@
 
 Emulated CP/M machines you can drive interactively or from a script.
 
-The first (and so far only) machine is a **Kaypro 2 (1984)** — Z80, 64K, CP/M 2.2, two floppy drives — carrying Microsoft BASIC-80 v5 and FORTRAN-80 v3.44. It's modelled after a real machine owned by a mathematics professor.
+The first (and so far only) machine is a **Kaypro 2 (1984)** — Z80, 64K, CP/M 2.2, two floppy drives — carrying Microsoft BASIC-80 v5, Microsoft FORTRAN-80 v3.44, and Digital Research CBASIC 2 (v2.07). It's modelled after a real machine owned by a mathematics professor.
 
 ## A note on the model number
 
@@ -15,7 +15,7 @@ It's a Kaypro **2**, not a Kaypro **II**, and the difference is real rather than
 
 Kaypro changed the bundle in 1984, and the Roman-vs-Arabic numeral is how the two machines are told apart (the same split distinguishes the Kaypro IV '83 from the Kaypro 4 '84). This machine has MBASIC, so it's the 1984 one — hence `machines/kaypro-2-84/`. Please don't "correct" it to `kaypro-ii`.
 
-FORTRAN-80 was never part of any Kaypro bundle. It's here because the professor's real machine had it, not because the model shipped with it.
+FORTRAN-80 and CBASIC were never part of any Kaypro bundle. They're here because the professor's real machine had them, not because the model shipped with them.
 
 Underneath, the emulator is [RunCPM](https://github.com/MockbaTheBorg/RunCPM), a generic Z80 CP/M 2.2 machine. There's no Kaypro-specific BIOS, terminal emulation, or disk geometry — the machine's identity lives in its software bundle and drive layout, not in the hardware.
 
@@ -31,15 +31,17 @@ tests/
 
 A machine is just a directory under `machines/`. Everything else is shared.
 
+The numbered subdirectory under each drive letter is the CP/M **user area** (0–15): `A/0` is drive A user 0, `B/3` would be drive B user 3. RunCPM materializes an area the first time a file lands in it, so a machine that wants populated user areas just checks in the numbered directories — no harness changes.
+
 ## Setup
 
-Fetch MBASIC and FORTRAN-80 onto the A: drive (once):
+Fetch MBASIC, FORTRAN-80 and CBASIC onto the A: drive (once):
 
 ```bash
 bash machines/kaypro-2-84/download_software.sh
 ```
 
-These are Microsoft binaries, still copyrighted but freely circulated in the retrocomputing community. They aren't checked in.
+These are Microsoft and Digital Research binaries, still copyrighted but freely circulated in the retrocomputing community. They aren't checked in.
 
 ## Use it interactively
 
@@ -81,6 +83,15 @@ A0> MBASIC              enter the interpreter (Ok prompt)
 Ok  LOAD "B:PROG.BAS"
 Ok  RUN
 Ok  SYSTEM              back to CP/M
+```
+
+## CBASIC
+
+CBASIC 2 is a compiler/runtime pair: `CBAS2` compiles source to P-code (`.INT`), `CRUN2` executes it. Arithmetic is 14-digit BCD.
+
+```
+A0> CBAS2 B:PROG        compile B:PROG.BAS -> B:PROG.INT
+A0> CRUN2 B:PROG        run
 ```
 
 ## Tests
