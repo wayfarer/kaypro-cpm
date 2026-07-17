@@ -4,4 +4,6 @@ RunCPM
 __pycache__/
 README.md
 download_software.sh
+set-boot-mode.sh
+.gitignore
 .dockerignore

@@ -24,11 +24,14 @@ def handle(msg: dict, session: CPMSession, machine_dir: str) -> str:
         user = int(msg.get("user", 0))
         if not 0 <= user <= 15:
             return f"Invalid user area: {user}"
-        area = os.path.join(machine_dir, "B", str(user))
+        drive = str(msg.get("drive", "B")).upper()
+        if drive not in "ABCDEFGHIJKLMNOP" or len(drive) != 1:
+            return f"Invalid drive: {drive}"
+        area = os.path.join(machine_dir, drive, str(user))
         os.makedirs(area, exist_ok=True)
         with open(os.path.join(area, name), "w", newline="\r\n") as f:
             f.write(msg["content"])
-        return f"Written {name} to B: user {user}"
+        return f"Written {name} to {drive}: user {user}"
 
     return f"Unknown action: {action!r}"
 

@@ -1,0 +1,9 @@
+# Downloaded software (copyrighted — fetch with: bash download_software.sh)
+hd0/0/*.COM
+hd0/0/*.REL
+
+# Work files (generated during sessions)
+hd1/0/*
+!hd1/0/.gitkeep
+floppy/0/*
+!floppy/0/.gitkeep

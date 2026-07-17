@@ -6,7 +6,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-RUN git clone --depth 1 https://github.com/MockbaTheBorg/RunCPM /tmp/RunCPM
+# Upstream has no release tags, so we pin by commit SHA. Keep in sync with
+# RUNCPM_REF in harness/build_runcpm.sh.
+ARG RUNCPM_REF=1c19a8baa073ecf746d6501cc28239d139b809d7
+
+# A shallow clone can't check out an arbitrary SHA; fetch the pinned commit directly.
+RUN git init /tmp/RunCPM \
+  && git -C /tmp/RunCPM remote add origin https://github.com/MockbaTheBorg/RunCPM \
+  && git -C /tmp/RunCPM fetch --depth 1 origin "$RUNCPM_REF" \
+  && git -C /tmp/RunCPM checkout FETCH_HEAD
 
 RUN cd /tmp/RunCPM/RunCPM && make posix build
 
@@ -17,7 +25,10 @@ WORKDIR /cpm
 
 COPY --from=builder /tmp/RunCPM/RunCPM/RunCPM ./RunCPM
 
-COPY A/ ./A/
-COPY B/ ./B/
+# Copy the whole machine directory (the build context): drive letters may be
+# plain directories or symlinks into real stores, and COPY of a symlink does
+# not dereference it — copying everything keeps relative links resolvable.
+# The machine's .dockerignore keeps non-drive files out.
+COPY . ./
 
 CMD ["./RunCPM"]
