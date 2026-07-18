@@ -1,6 +1,6 @@
 # Kaypro 2 (1984)
 
-Z80, 64K, CP/M 2.2, two floppy drives — carrying Microsoft BASIC-80 v5, Microsoft FORTRAN-80 v3.44, and Digital Research CBASIC 2 (v2.07). It's modelled after a real machine owned by a mathematics professor.
+Z80, 64K, CP/M 2.2, two floppy drives — carrying Microsoft BASIC-80 v5, Microsoft FORTRAN-80 v3.44, Microsoft MACRO-80, Digital Research CBASIC 2 (v2.07), and DRI's SUBMIT batch transient. It's modelled after a real machine owned by a mathematics professor.
 
 ## A note on the model number
 
@@ -13,7 +13,7 @@ It's a Kaypro **2**, not a Kaypro **II**, and the difference is real rather than
 
 Kaypro changed the bundle in 1984, and the Roman-vs-Arabic numeral is how the two machines are told apart (the same split distinguishes the Kaypro IV '83 from the Kaypro 4 '84). This machine has MBASIC, so it's the 1984 one — hence `machines/kaypro-2-84/`. Please don't "correct" it to `kaypro-ii`.
 
-FORTRAN-80 and CBASIC were never part of any Kaypro bundle. They're here because the professor's real machine had them, not because the model shipped with them.
+FORTRAN-80, MACRO-80 and CBASIC were never part of any Kaypro bundle. They're here because the professor's real machine had them, not because the model shipped with them.
 
 ## Drives
 
@@ -24,7 +24,7 @@ FORTRAN-80 and CBASIC were never part of any Kaypro bundle. They're here because
 
 ## Setup
 
-Fetch MBASIC, FORTRAN-80 and CBASIC onto the A: drive (once):
+Fetch MBASIC, FORTRAN-80, MACRO-80, CBASIC and SUBMIT onto the A: drive (once):
 
 ```bash
 bash machines/kaypro-2-84/download_software.sh
