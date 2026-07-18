@@ -5,9 +5,9 @@ IMAGE = cpm-$(MACHINE)
 .PHONY: build run run-persist native start stop status machines test clean
 
 # Docker: the machine directory is the build context, so the Dockerfile's
-# COPY A/ and COPY B/ pick up that machine's drives.
+# COPY . picks up that machine's drives (and its .dockerignore trims the rest).
 build:
-	docker build -t $(IMAGE) -f harness/Dockerfile $(MACHINE_DIR)
+	docker build --build-context patches=harness/patches -t $(IMAGE) -f harness/Dockerfile $(MACHINE_DIR)
 
 run: build
 	docker run -it $(IMAGE)
@@ -37,6 +37,6 @@ test: RunCPM
 
 clean:
 	-python cpm.py --machine $(MACHINE) stop 2>/dev/null
-	rm -f RunCPM machines/*/.cpm.sock machines/*/.cpm.pid
+	rm -f RunCPM machines/*/.cpm.sock machines/*/.cpm.pid machines/*/.cpm.modem.sock
 
 .DEFAULT_GOAL := run

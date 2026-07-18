@@ -40,3 +40,7 @@ def sock_path(machine_dir: str) -> str:
 
 def pid_path(machine_dir: str) -> str:
     return os.path.join(machine_dir, ".cpm.pid")
+
+
+def modem_sock_path(machine_dir: str) -> str:
+    return os.path.join(machine_dir, ".cpm.modem.sock")

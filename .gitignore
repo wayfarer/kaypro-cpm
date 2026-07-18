@@ -4,6 +4,7 @@ RunCPM
 # Runtime files, one set per machine
 .cpm.sock
 .cpm.pid
+.cpm.modem.sock
 
 # Python cache
 __pycache__/

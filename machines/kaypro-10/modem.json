@@ -1,0 +1,10 @@
+{
+  "sio": { "data_port": 4, "status_port": 6, "baud_port": 0 },
+  "listen_port": 2323,
+  "baud": 0,
+  "telnet_default": false,
+  "phonebook": {
+    "2": { "host": "127.0.0.1:2324", "telnet": false }
+  },
+  "s_registers": { "0": 0 }
+}

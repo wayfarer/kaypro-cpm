@@ -27,7 +27,7 @@ class CPMSession:
     """A live RunCPM process. `machine_dir` holds the drives and becomes its cwd,
     which is what RunCPM resolves A:, B:, ... against."""
 
-    def __init__(self, machine_dir: str):
+    def __init__(self, machine_dir: str, env: dict = None):
         self.machine_dir = machine_dir
         master_fd, slave_fd = pty.openpty()
         self._proc = subprocess.Popen(
@@ -37,6 +37,7 @@ class CPMSession:
             stderr=slave_fd,
             cwd=machine_dir,
             close_fds=True,
+            env={**os.environ, **env} if env else None,
         )
         os.close(slave_fd)
         self._fd = master_fd
