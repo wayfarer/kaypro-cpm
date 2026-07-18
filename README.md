@@ -2,7 +2,7 @@
 
 Emulated CP/M machines you can drive interactively or from a script.
 
-The first (and so far only) machine is a **Kaypro 2 (1984)** — Z80, 64K, CP/M 2.2, two floppy drives — carrying Microsoft BASIC-80 v5, Microsoft FORTRAN-80 v3.44, and Digital Research CBASIC 2 (v2.07). It's modelled after a real machine owned by a mathematics professor.
+The first (and so far only) machine is a **Kaypro 2 (1984)** — Z80, 64K, CP/M 2.2, two floppy drives — carrying Microsoft BASIC-80 v5, Microsoft FORTRAN-80 v3.44, Microsoft MACRO-80, Digital Research CBASIC 2 (v2.07), and DRI's SUBMIT batch transient. It's modelled after a real machine owned by a mathematics professor.
 
 ## A note on the model number
 
@@ -15,7 +15,7 @@ It's a Kaypro **2**, not a Kaypro **II**, and the difference is real rather than
 
 Kaypro changed the bundle in 1984, and the Roman-vs-Arabic numeral is how the two machines are told apart (the same split distinguishes the Kaypro IV '83 from the Kaypro 4 '84). This machine has MBASIC, so it's the 1984 one — hence `machines/kaypro-2-84/`. Please don't "correct" it to `kaypro-ii`.
 
-FORTRAN-80 and CBASIC were never part of any Kaypro bundle. They're here because the professor's real machine had them, not because the model shipped with them.
+FORTRAN-80, MACRO-80 and CBASIC were never part of any Kaypro bundle. They're here because the professor's real machine had them, not because the model shipped with them.
 
 Underneath, the emulator is [RunCPM](https://github.com/MockbaTheBorg/RunCPM), a generic Z80 CP/M 2.2 machine. There's no Kaypro-specific BIOS, terminal emulation, or disk geometry — the machine's identity lives in its software bundle and drive layout, not in the hardware.
 
@@ -93,6 +93,27 @@ CBASIC 2 is a compiler/runtime pair: `CBAS2` compiles source to P-code (`.INT`),
 A0> CBAS2 B:PROG        compile B:PROG.BAS -> B:PROG.INT
 A0> CRUN2 B:PROG        run
 ```
+
+## MACRO-80
+
+Z80/8080 macro assembler. Source is `.MAC`; start it with `.Z80` and use `ASEG` / `ORG 100H` for a standalone `.COM`. The same L80 that links FORTRAN links its output.
+
+```
+A0> M80 B:PROG=B:PROG   assemble B:PROG.MAC -> B:PROG.REL (no listing)
+A0> M80 =B:PROG         same, but also writes a B:PROG.PRN listing
+A0> L80 B:PROG,B:PROG/N/E   link -> B:PROG.COM
+A0> B:PROG              run
+```
+
+## SUBMIT
+
+DRI's batch transient. Put one CP/M command per line in a `.SUB` file and the CCP runs them in order; while a batch is active the prompt terminator is `$` rather than `>`, and it returns to `>` when the batch ends. RunCPM's internal CCP processes the `$$$.SUB` mechanism natively.
+
+```
+A0> SUBMIT B:BUILD      run the commands in B:BUILD.SUB
+```
+
+A scripted session that only recognizes the `>` prompt still works: it simply waits until the whole batch has finished.
 
 ## Tests
 
