@@ -1,6 +1,8 @@
 RunCPM
 .cpm.sock
 .cpm.pid
+.cpm.modem.sock
+modem.json
 __pycache__/
 README.md
 download_software.sh

@@ -101,6 +101,8 @@ def main():
     elif args.command == "status":
         running = os.path.exists(sock_path(machine_dir))
         print(f"{name}: {'running' if running else 'not running'}")
+        if running and os.path.exists(os.path.join(machine_dir, "modem.json")):
+            print(f"modem: {_send(sock_path(machine_dir), {'action': 'modem_status'})}")
     elif args.command == "run":
         print(_send(sock_path(machine_dir), {"action": "run", "command": args.cpm_command}))
     elif args.command == "write":

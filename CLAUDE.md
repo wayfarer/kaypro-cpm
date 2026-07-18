@@ -17,7 +17,9 @@ cpm.py  ──(Unix socket)──  harness.daemon  ──(pty)──  RunCPM bin
 
 `harness/` is machine-agnostic: nothing in it knows about a Kaypro. A machine is a directory under `machines/` holding drives (`A/0`, `B/0`) and its software. Drive letters may also be symlinks onto named stores — `kaypro-10` keeps real dirs `hd0/`, `hd1/`, `floppy/` and rewires `A`/`B`/`C` with its `set-boot-mode.sh` (committed default: hd boot). Adding a machine should never require touching `harness/`.
 
-RunCPM is pinned to a fixed commit in `harness/build_runcpm.sh` and `harness/Dockerfile` (upstream has no tags). Bump both together, and only after `make test` passes on the new SHA.
+RunCPM is pinned to a fixed commit in `harness/build_runcpm.sh` and `harness/Dockerfile` (upstream has no tags). Both builds apply the local patches in `harness/patches/` (currently the serial/modem bridge) after checkout — `git apply --check` fails the build loudly if a patch no longer applies. Bump the SHA in both files together, re-verify (and if needed regenerate) the patches against the new commit, and only land it after `make test` passes.
+
+A machine gets a modem by having a `modem.json` beside its drives. The daemon then starts a `ModemEngine` (`harness/modem.py` — Hayes AT state machine, TCP dial/listen) and tells the patched emulator where its SIO lives via `CPM_MODEM_SOCKET`/`CPM_SIO_*_PORT` env vars; the byte stream runs over `.cpm.modem.sock` in the machine dir. Without the config (or the env vars) everything is dormant and RunCPM behaves stock. The engine is machine-agnostic: port numbers, listen port, and phonebook all live in the machine's config.
 
 `cpm.py` is stateless — each invocation opens a socket and sends one newline-terminated JSON message (`{"action": "run"|"write", ...}`). The daemon holds the single long-lived `CPMSession`. The socket and PID file live in the machine's own directory, so machines don't collide.
 

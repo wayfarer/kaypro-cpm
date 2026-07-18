@@ -2,7 +2,7 @@
 
 Emulated CP/M machines you can drive interactively or from a script.
 
-Underneath, the emulator is [RunCPM](https://github.com/MockbaTheBorg/RunCPM), a generic Z80 CP/M 2.2 machine. There's no machine-specific BIOS, terminal emulation, or disk geometry — each machine's identity lives in its software bundle and drive layout, not in the hardware.
+Underneath, the emulator is [RunCPM](https://github.com/MockbaTheBorg/RunCPM), a generic Z80 CP/M 2.2 machine. There's no machine-specific BIOS, terminal emulation, or disk geometry — each machine's identity lives in its software bundle and drive layout, not in the hardware. The one hardware concession is a modem (see below): a small local patch gives RunCPM a serial port at the Kaypros' historical modem ports.
 
 ## Machines
 
@@ -90,17 +90,43 @@ A0> CBAS2 B:PROG        compile B:PROG.BAS -> B:PROG.INT
 A0> CRUN2 B:PROG        run
 ```
 
+## The modem
+
+The real Kaypro 10 had a built-in 300-baud modem (an RJ11 jack on the back, wired to Z80 SIO channel A). The emulated machines have one too, with TCP as the phone network:
+
+- A patch to RunCPM (`harness/patches/`) puts a minimal SIO at the machine's historical modem ports — **data 04h, status 06h** on the Kaypros — bridged over a Unix socket to the session daemon.
+- The daemon answers the other end as a Hayes-style smart modem (`harness/modem.py`). Real Kaypro modems predate the AT command set — bundled software dialed a TI chip directly — but AT is the dialect every terminal program and every human speaks, so that's what the modem presents.
+
+A machine gets a modem by having a `modem.json` next to its drives (port map, listen port, phonebook). Both Kaypros have one. Anything that can poll the SIO can use it; from MBASIC:
+
+```
+Ok  A$="ATDT 127.0.0.1:2324"+CHR$(13)
+Ok  FOR I=1 TO LEN(A$):OUT 4,ASC(MID$(A$,I,1)):NEXT   ' dial
+Ok  IF (INP(6) AND 1)=1 THEN PRINT CHR$(INP(4));      ' read a reply byte
+```
+
+What works, in Hayes terms:
+
+- `ATDT host:port` dials any TCP endpoint; `ATDT <number>` looks the number up in the machine's phonebook. `CONNECT` / `BUSY` / `NO CARRIER` result codes as you'd expect.
+- Each machine listens for calls (kaypro-10 on port 2323, kaypro-2-84 on 2324): an inbound TCP connection rings the modem (`RING`), answered with `ATA` or auto-answered with `ATS0=1`.
+- The machines can call each other — the phonebooks are pre-wired so kaypro-10 dials `2` to reach the Kaypro 2, which dials `10` to call back.
+- `+++` (with guard time) escapes to command mode, `ATO` resumes, `ATH` hangs up; `ATE/Q/V`, S-registers, and the classic `AT&C1&D2`-style knobs are accepted.
+- Dialing a telnet port (23, or a phonebook entry marked `"telnet": true`) transparently strips telnet option negotiation, so internet telnet BBSes look like a clean serial line.
+- `"baud": 300` in `modem.json` paces delivery to an authentic ~30 chars/sec; the default (`0`) is full speed.
+
+`python cpm.py status` shows the modem's state alongside the session. The daemon owns the modem, so scripted and interactive native sessions get it automatically; the Docker image runs bare RunCPM with the bridge dormant.
+
 ## Tests
 
 ```bash
 make test
 ```
 
-Boots every machine and drives it through a real FORTRAN compile, link and run. Needs `make native` first; skips cleanly without it.
+Boots every machine and drives it through a real FORTRAN compile, link and run — and, on machines with a modem, an AT dialogue and a dialed TCP round-trip driven from MBASIC. Needs `make native` first; skips cleanly without it. The modem engine's own tests (`tests/test_modem.py`) run against loopback sockets and need no binary.
 
 ## Adding a machine
 
-Create `machines/<name>/` with drives (either `A/0/`, `B/0/` directories or drive-letter symlinks onto named stores), a `download_software.sh` to fetch its software, and a `README.md` telling its story. Then:
+Create `machines/<name>/` with drives (either `A/0/`, `B/0/` directories or drive-letter symlinks onto named stores), a `download_software.sh` to fetch its software, and a `README.md` telling its story. Add a `modem.json` if it should have a modem (pick an unused listen port). Then:
 
 ```bash
 make MACHINE=<name> run

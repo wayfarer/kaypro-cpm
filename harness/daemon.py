@@ -10,14 +10,20 @@ import socket
 import sys
 
 from . import pid_path, resolve_machine, sock_path
+from .modem import ModemEngine
 from .session import CPMSession
 
 
-def handle(msg: dict, session: CPMSession, machine_dir: str) -> str:
+def handle(msg: dict, session: CPMSession, machine_dir: str, modem: ModemEngine = None) -> str:
     action = msg.get("action")
 
     if action == "run":
         return session.run(msg["command"]) or "(no output)"
+
+    if action == "modem_status":
+        if modem is None:
+            return "no modem on this machine"
+        return json.dumps(modem.status())
 
     if action == "write":
         name = os.path.basename(msg["filename"])
@@ -47,7 +53,13 @@ def main():
     with open(pid, "w") as f:
         f.write(str(os.getpid()))
 
-    session = CPMSession(machine_dir)
+    # The modem engine (if this machine has one) must be listening before the
+    # emulator spawns, since the patched RunCPM connects to it at startup.
+    modem = ModemEngine.from_machine(machine_dir)
+    if modem:
+        modem.start()
+
+    session = CPMSession(machine_dir, env=modem.env() if modem else None)
 
     if os.path.exists(sock):
         os.unlink(sock)
@@ -58,6 +70,8 @@ def main():
 
     def shutdown(_sig, _frame):
         session.close()
+        if modem:
+            modem.stop()
         for path in (sock, pid):
             if os.path.exists(path):
                 os.unlink(path)
@@ -71,7 +85,7 @@ def main():
             data = b""
             while not data.endswith(b"\n"):
                 data += conn.recv(4096)
-            result = handle(json.loads(data.decode()), session, machine_dir)
+            result = handle(json.loads(data.decode()), session, machine_dir, modem)
             conn.send((json.dumps({"output": result}) + "\n").encode())
         finally:
             conn.close()

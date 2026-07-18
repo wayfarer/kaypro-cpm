@@ -1,0 +1,229 @@
+diff --git a/RunCPM/abstraction_posix.h b/RunCPM/abstraction_posix.h
+index a55d9e4..4b02258 100644
+--- a/RunCPM/abstraction_posix.h
++++ b/RunCPM/abstraction_posix.h
+@@ -488,14 +488,223 @@ uint8 _findfirstallusers(uint8 isdir) {
+ 
+ /* Hardware abstraction functions */
+ /*===============================================================================*/
++/* Optional serial bridge: a minimal Z80-SIO-style port pair relayed over a
++   Unix-domain socket. Enabled only when CPM_MODEM_SOCKET names a socket to
++   connect to; otherwise every hook below behaves exactly like the original
++   empty stubs. The peer (the harness daemon) supplies the modem personality;
++   this side only moves bytes and reports line status.
++
++   Port numbers come from CPM_SIO_DATA_PORT / CPM_SIO_STATUS_PORT /
++   CPM_SIO_BAUD_PORT (strtol base 0), so the machine - not this file - decides
++   the port map. Wire format, both directions: [tag:1][len:1][payload:len].
++   Peer->us: 'D' = received data, 'S' = status (payload bit0 = carrier/DCD).
++   Us->peer: 'D' = transmitted data.
++
++   All socket I/O is non-blocking: these hooks run synchronously in the middle
++   of an emulated instruction, so they must never stall. */
++#include <sys/socket.h>
++#include <sys/un.h>
++#include <fcntl.h>
++
++#ifndef MSG_NOSIGNAL
++#define MSG_NOSIGNAL 0
++#endif
++
++static int modemEnabled = 0;
++static int sioDataPort = -1, sioStatusPort = -1, sioBaudPort = -1;
++static struct sockaddr_un modemAddr;
++static int modemFd = -1;
++static uint8 modemRx[16384];        /* ring of received data, head==tail empty */
++static int modemRxHead = 0, modemRxTail = 0;
++static uint8 modemTx[4096];         /* frames waiting on a writable socket */
++static int modemTxLen = 0;
++static uint8 modemInBuf[512];       /* frame reassembly */
++static int modemInLen = 0;
++static uint8 modemCarrier = 0;
++static uint8 sioRegPtr = 0;         /* SIO register pointer, set by WR0 writes */
++static uint32 modemLastConnect = 0;
++
++static void _modemDisconnect(void) {
++    if (modemFd >= 0)
++        close(modemFd);
++    modemFd = -1;
++    modemCarrier = 0;
++    modemInLen = 0;
++    modemTxLen = 0;
++    modemRxHead = modemRxTail = 0;
++    sioRegPtr = 0;
++}
++
++static void _modemTryConnect(void) {
++    uint32 now = millis();
++    int one = 1;
++    if (modemLastConnect && now - modemLastConnect < 200)
++        return;
++    modemLastConnect = now ? now : 1;
++    modemFd = socket(AF_UNIX, SOCK_STREAM, 0);
++    if (modemFd < 0)
++        return;
++    fcntl(modemFd, F_SETFL, O_NONBLOCK);
++#ifdef SO_NOSIGPIPE
++    setsockopt(modemFd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
++#else
++    (void)one;
++#endif
++    if (connect(modemFd, (struct sockaddr *)&modemAddr, sizeof(modemAddr)) < 0
++        && errno != EINPROGRESS && errno != EISCONN && errno != EAGAIN) {
++        close(modemFd);
++        modemFd = -1;
++    }
++}
++
++static void _modemParseFrames(void) {
++    int off = 0;
++    while (modemInLen - off >= 2) {
++        uint8 tag = modemInBuf[off];
++        int len = modemInBuf[off + 1];
++        uint8 *payload = modemInBuf + off + 2;
++        int i, next;
++        if (modemInLen - off < 2 + len)
++            break;
++        if (tag == 'D') {
++            for (i = 0; i < len; i++) {
++                next = (modemRxHead + 1) % (int)sizeof(modemRx);
++                if (next == modemRxTail)
++                    break;      /* ring full: drop, like a real overrun */
++                modemRx[modemRxHead] = payload[i];
++                modemRxHead = next;
++            }
++        } else if (tag == 'S' && len >= 1) {
++            modemCarrier = payload[0] & 1;
++        }
++        off += 2 + len;
++    }
++    if (off > 0) {
++        memmove(modemInBuf, modemInBuf + off, modemInLen - off);
++        modemInLen -= off;
++    }
++}
++
++static void _modemPoll(void) {
++    uint8 buf[256];
++    int n, room;
++    if (modemFd < 0) {
++        _modemTryConnect();
++        if (modemFd < 0)
++            return;
++    }
++    if (modemTxLen > 0) {
++        n = (int)send(modemFd, modemTx, modemTxLen, MSG_NOSIGNAL);
++        if (n > 0) {
++            memmove(modemTx, modemTx + n, modemTxLen - n);
++            modemTxLen -= n;
++        } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK
++                   && errno != ENOTCONN && errno != EINTR) {
++            _modemDisconnect();
++            return;
++        }
++    }
++    for (;;) {
++        room = (int)sizeof(modemInBuf) - modemInLen;
++        if (room <= 0)
++            break;              /* parser is behind; try again next poll */
++        n = (int)recv(modemFd, buf, room < (int)sizeof(buf) ? room : (int)sizeof(buf), 0);
++        if (n == 0) {
++            _modemDisconnect();
++            return;
++        }
++        if (n < 0) {
++            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == ENOTCONN
++                || errno == EINTR)
++                break;
++            _modemDisconnect();
++            return;
++        }
++        memcpy(modemInBuf + modemInLen, buf, n);
++        modemInLen += n;
++        _modemParseFrames();
++    }
++}
++
++static void _modemQueueTx(uint8 b) {
++    if (modemTxLen + 3 > (int)sizeof(modemTx))
++        return;                 /* peer stalled; drop rather than block */
++    modemTx[modemTxLen++] = 'D';
++    modemTx[modemTxLen++] = 1;
++    modemTx[modemTxLen++] = b;
++}
++
+ void _HardwareInit(void) {
++    const char *path = getenv("CPM_MODEM_SOCKET");
++    const char *v;
++    if (path == NULL || path[0] == 0 || strlen(path) >= sizeof(modemAddr.sun_path))
++        return;
++    memset(&modemAddr, 0, sizeof(modemAddr));
++    modemAddr.sun_family = AF_UNIX;
++    strcpy(modemAddr.sun_path, path);
++    if ((v = getenv("CPM_SIO_DATA_PORT")) != NULL)
++        sioDataPort = (int)strtol(v, NULL, 0);
++    if ((v = getenv("CPM_SIO_STATUS_PORT")) != NULL)
++        sioStatusPort = (int)strtol(v, NULL, 0);
++    if ((v = getenv("CPM_SIO_BAUD_PORT")) != NULL)
++        sioBaudPort = (int)strtol(v, NULL, 0);
++    modemEnabled = 1;
++    /* Connect eagerly: the daemon treats an attached emulator as "the phone
++       is plugged in", and inbound calls are refused without one. Waiting for
++       the first port access would leave the modem unreachable until some
++       program happens to poll the SIO. */
++    _modemTryConnect();
+ }
+ 
+ void _HardwareOut(const uint32 Port, const uint32 Value) {
++    int p = (int)(Port & 0xFF);
++    if (!modemEnabled)
++        return;
++    if (p == sioDataPort) {
++        _modemPoll();
++        _modemQueueTx((uint8)(Value & 0xFF));
++        _modemPoll();
++    } else if (p == sioStatusPort) {
++        /* WR0 selects a register; a following write lands in WR1-WR7. We keep
++           the pointer for the next status read and ignore the register data
++           itself (resets, interrupt modes, baud - all meaningless here). */
++        if (sioRegPtr == 0)
++            sioRegPtr = (uint8)(Value & 0x07);
++        else
++            sioRegPtr = 0;
++    }
++    /* sioBaudPort: baud-rate generator, accept and ignore */
+ }
+ 
+ uint32 _HardwareIn(const uint32 Port) {
+-    return 0;
++    int p = (int)(Port & 0xFF);
++    uint32 v = 0;
++    if (!modemEnabled)
++        return 0;
++    if (p == sioDataPort) {
++        _modemPoll();
++        if (modemRxTail != modemRxHead) {
++            v = modemRx[modemRxTail];
++            modemRxTail = (modemRxTail + 1) % (int)sizeof(modemRx);
++        }
++    } else if (p == sioStatusPort) {
++        _modemPoll();
++        switch (sioRegPtr) {
++        case 0:
++            /* RR0: bit0 RX char available, bit2 TX buffer empty (we always
++               accept), bit3 DCD, bit5 CTS */
++            v = 0x04 | 0x20;
++            if (modemRxTail != modemRxHead)
++                v |= 0x01;
++            if (modemCarrier)
++                v |= 0x08;
++            break;
++        default:
++            v = 0;              /* RR1/RR2: no errors, no vector */
++        }
++        sioRegPtr = 0;
++    }
++    return v;
+ }
+ 
+ /* Host initialization functions */

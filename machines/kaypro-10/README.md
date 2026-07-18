@@ -29,6 +29,20 @@ The bundle (MBASIC, FORTRAN-80, CBASIC — same tools as the Kaypro 2) lives on 
 bash machines/kaypro-10/download_software.sh
 ```
 
+## Modem
+
+The real Kaypro 10 had a built-in 300-baud Bell 103 modem — TI TMS99531/99532 chips on Z80 SIO channel A (data port 04h, control/status 06h), with an RJ11 jack on the back panel. It predated the Hayes standard: the bundled comms software dialed by poking the TI dialer directly.
+
+The emulated one keeps the port map and swaps the phone network for TCP, presenting a Hayes AT interface (see the root README for the full command set):
+
+| | |
+|---|---|
+| SIO ports | data `04h`, status `06h`, baud `00h` (accepted, ignored) |
+| Answers on | TCP port **2323** (localhost) |
+| Phonebook | dial `2` → the kaypro-2-84's modem |
+
+Configured in `modem.json`; delete that file and the machine reverts to no modem.
+
 ## Testing note
 
 `make test` exercises whichever mode the symlinks currently point at, and the language checks assume the committed hard-drive boot default (tools on A:). Under floppy boot, A: is the blank floppy, so those checks don't apply unless you stage tools onto it.

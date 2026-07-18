@@ -30,6 +30,18 @@ Fetch MBASIC, FORTRAN-80 and CBASIC onto the A: drive (once):
 bash machines/kaypro-2-84/download_software.sh
 ```
 
+## Modem
+
+The '84-series Kaypros offered a built-in 300-baud modem on Z80 SIO channel A (data port 04h, status 06h) — standard on the 2X, an option on this model. The emulated machine has one, Hayes AT over TCP (see the root README):
+
+| | |
+|---|---|
+| SIO ports | data `04h`, status `06h`, baud `00h` (accepted, ignored) |
+| Answers on | TCP port **2324** (localhost) |
+| Phonebook | dial `10` → the kaypro-10's modem |
+
+Configured in `modem.json`; delete that file and the machine reverts to no modem.
+
 ## Wanted
 
 **WordStar 3.3** — genuinely part of the Kaypro 2/84 bundle, alongside MailMerge. It belongs in `machines/kaypro-2-84/A/0/` as `WS.COM`, but it's harder to source than the Microsoft tools.

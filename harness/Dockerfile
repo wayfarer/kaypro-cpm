@@ -16,6 +16,16 @@ RUN git init /tmp/RunCPM \
   && git -C /tmp/RunCPM fetch --depth 1 origin "$RUNCPM_REF" \
   && git -C /tmp/RunCPM checkout FETCH_HEAD
 
+# Local patches (serial/modem bridge). The build context is a machine dir, so
+# the Makefile passes harness/patches as a named context:
+#   docker build --build-context patches=harness/patches ...
+# --check first so drift against a bumped RUNCPM_REF fails the build. Keep in
+# sync with the same step in harness/build_runcpm.sh.
+COPY --from=patches . /tmp/patches/
+RUN for p in /tmp/patches/*.patch; do \
+      git -C /tmp/RunCPM apply --check "$p" && git -C /tmp/RunCPM apply "$p"; \
+    done
+
 RUN cd /tmp/RunCPM/RunCPM && make posix build
 
 
