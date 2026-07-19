@@ -17,7 +17,7 @@ run-persist: build
 
 native: RunCPM
 
-RunCPM:
+RunCPM: harness/build_runcpm.sh $(wildcard harness/patches/*.patch)
 	bash harness/build_runcpm.sh
 
 start: RunCPM

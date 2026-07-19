@@ -87,7 +87,7 @@ class SmokeTest(unittest.TestCase):
                 session = CPMSession(machine_dir, env=modem.env() if modem else None)
                 try:
                     self._check_dir(session)
-                    self._check_no_output_lag(session)
+                    self._check_no_output_lag(session, machine_dir)
                     self._check_modem(session, machine_dir, modem)
                     # Last: its skipTest aborts anything that would follow.
                     self._check_fortran(session, machine_dir)
@@ -105,12 +105,15 @@ class SmokeTest(unittest.TestCase):
         self.assertNotIn("DIR\n", listing)
         self.assertNotIn("RunCPM Version", listing)
 
-    def _check_no_output_lag(self, session):
+    def _check_no_output_lag(self, session, machine_dir):
         """Each command must return its own output and nothing else.
 
         Guards the bug where a stray prompt left unread in the pty buffer
         surfaced at the head of the *next* command's output.
         """
+        if not os.path.exists(os.path.join(machine_dir, "A", "0", "MBASIC.COM")):
+            return  # no MBASIC on this machine; the output-lag guard needs it
+
         session.run("DIR")
         # A literal 'Ok' in program output used to be mistaken for MBASIC's
         # prompt and cut the read short.
